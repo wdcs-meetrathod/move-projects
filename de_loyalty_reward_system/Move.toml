@@ -1,0 +1,16 @@
+[package]
+name = "de_loyalty_reward_system"
+version = "1.0.0"
+authors = ["MR"]
+
+[addresses]
+de_reward = "0xced59b51c42bf1d5081a1b2c5d417d00af6b6fe0a211d7f4883c995572d5506c"
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "devnet"
+subdir = "aptos-move/framework/aptos-framework"
+
+[dev-dependencies]
