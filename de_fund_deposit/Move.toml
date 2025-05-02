@@ -1,0 +1,17 @@
+[package]
+name = "de_fund_deposit"
+version = "1.0.0"
+authors = ["MR"]
+
+[addresses]
+de_fund_deposit = "0x11edefecb1d7816d7380e00aecdf3a9b35b4babc33417ce7950ebe85a0b1e7cb"
+admin = "0x40"
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "devnet"
+subdir = "aptos-move/framework/aptos-framework"
+
+[dev-dependencies]
