@@ -1,0 +1,7 @@
+- ✅ Do not use `debug::print` in production-ready code.
+- ✅ Rename the function `get_resource_address` to `get_registry_resource_address`.
+- ✅ In `register_user`, ensure that only the admin can whitelist `user_addr`. Users should not be able to whitelist themselves.
+- ✅ Replace the loop `while(i < vector::length(&users))` with `vector::for_each` or `vector::for_each_mut`, depending on the use case.
+- ✅ When a user is removed from the whitelist, also clear their records from the table and refund any deposited amount.
+- ✅ Remove the `handle_whitelisted_user` function. Instead, create two separate functions: `add_whitelist` and `remove_whitelist`.  
+- ✅ Use an `init_module` function, which is called by default at the time of contract deployment. Replace `init_registry` with `init_module`.

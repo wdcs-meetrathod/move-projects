@@ -5,7 +5,6 @@ module de_fund_deposit::FundDeposit {
     use std::signer::address_of;
     use std::event;
     use std::vector;
-    use std::debug;
 
     use aptos_std::table;
     
@@ -40,7 +39,19 @@ module de_fund_deposit::FundDeposit {
         remaining_fund:u64
     }
 
-    struct FundRegistry has key {
+    #[event]
+    struct RefundEvent has drop, store {
+        user_addr:address,
+        amount:u64,
+        remaining_fund:u64
+    }
+
+    #[event]
+    struct UserWhiteListedEvent has drop, store {
+        user_addr:address
+    }
+
+    struct FundRegistry has key{
         admin_addr: address,
         resource_address:address,
         resource_cap: SignerCapability,
@@ -52,40 +63,20 @@ module de_fund_deposit::FundDeposit {
         transferred_fund: u64
     }
 
-    public entry fun init_registry(admin:&signer){
-        let (resource_signer, resource_signer_cap)  = account::create_resource_account(admin,REGISTRY_SEED);
-        let resource_address = address_of(&resource_signer);
-
-        assert!(!exists<FundRegistry>(resource_address),errorCodes::fund_registry_already_exists());
-
-        let admin_addr = address_of(admin);
-        move_to(&resource_signer, FundRegistry {
-            admin_addr,
-            resource_address,
-            resource_cap: resource_signer_cap,
-            white_listed_addresses: table::new(),
-        });
-
-        event::emit(ModuleInitEvent{
-            admin_addr,
-            resource_addr:resource_address
-        });
-
-            debug::print(&resource_address);
-        coin::register<AptosCoin>(&resource_signer);
+    fun init_module(deployer:&signer){
+        initialize_internal(deployer);
     }
 
     public entry fun register_user(user: &signer) acquires FundRegistry{
         let user_addr = address_of(user);
         assert!(!exists<UserRegistry>(user_addr),errorCodes::user_already_exists());
 
-        let registry_addr = get_resource_address();
-
-        assert!(!exists<FundRegistry>(user_addr),errorCodes::fund_registry_not_found());
-
+        let registry_addr = get_registry_resource_address();
+        is_registry_exists(registry_addr);
+        
         let registry = borrow_global_mut<FundRegistry>(registry_addr);
 
-        table::add(&mut registry.white_listed_addresses, user_addr, false);
+        table::add(&mut registry.white_listed_addresses, user_addr, false); // By default user_addr is not whitelisted
 
         move_to(user,UserRegistry {
             user_addr,
@@ -95,39 +86,59 @@ module de_fund_deposit::FundDeposit {
         event::emit(UserInitEvent {
             user_addr
         });
-    }
+    }   
 
-    public entry fun handle_whitelisted_user(admin:&signer, users:vector<address> ,do_whitelist:bool)acquires FundRegistry {
+    public entry fun add_whitelist(admin:&signer, users:vector<address>) acquires FundRegistry{
         let admin_addr = address_of(admin);
 
-        let resource_addr = get_resource_address();        
-        assert!(exists<FundRegistry>(resource_addr),errorCodes::fund_registry_not_found());
+        let resource_addr = get_registry_resource_address();        
+        is_registry_exists(resource_addr);
 
         let registry = borrow_global_mut<FundRegistry>(resource_addr);
-        assert!(registry.admin_addr == admin_addr,errorCodes::unauthorized());
+        is_admin_user(registry.admin_addr, admin_addr);// Only admin can whitelist the users
 
-        let i = 0;
 
-        while(i < vector::length(&users)){
-            let user_addr  = *vector::borrow(&users,i);
+        if (vector::length(&users) > 0) {
+            vector::for_each<address>(users, |user_addr: address| {
             let user_ref = table::borrow_mut(&mut registry.white_listed_addresses, user_addr);
-            *user_ref = do_whitelist;
+            *user_ref = true; // Make the user_addr as whitelisted
 
-            i = i + 1;
-        }
+            event::emit(UserWhiteListedEvent {
+                user_addr
+                });
+            });
+        };
     }
+
+    public entry fun remove_whitelist(admin:&signer, users:vector<address>) acquires FundRegistry, UserRegistry{
+        let admin_addr = address_of(admin);
+
+        let resource_addr = get_registry_resource_address();        
+        is_registry_exists(resource_addr);
+
+        let registry = borrow_global_mut<FundRegistry>(resource_addr);
+
+        is_admin_user(registry.admin_addr, admin_addr);// Only admin can remove the white listed user
+
+        if (vector::length(&users) > 0) {
+            vector::for_each<address>(users, |user_addr: address| {
+            refund_removed_user_fund(resource_addr, &registry.resource_cap, user_addr);
+            table::remove(&mut registry.white_listed_addresses, user_addr);
+            });
+        };
+    }
+
 
     public entry fun deposit_fund(user:&signer, amount: u64) acquires UserRegistry, FundRegistry{
         let user_addr = address_of(user);
         is_user_exists(user_addr);
 
-        let registry_addr = get_resource_address();
+        let registry_addr = get_registry_resource_address();
         is_registry_exists(registry_addr);
-
+        
         let registry = borrow_global<FundRegistry>(registry_addr);
         
         is_user_whitelisted(&registry.white_listed_addresses, user_addr);
-
         has_sufficient_fund(user_addr, amount);
 
         coin::transfer<AptosCoin>(user, registry.resource_address, amount);
@@ -146,16 +157,15 @@ module de_fund_deposit::FundDeposit {
     }
 
     public entry fun withdraw_fund(admin_addr: address, amount: u64) acquires FundRegistry {
-        let registry_addr = get_resource_address();
+        let registry_addr = get_registry_resource_address();
         assert!(exists<FundRegistry>(registry_addr), errorCodes::fund_registry_not_found());
 
         let registry = borrow_global_mut<FundRegistry>(registry_addr);
         assert!(registry.admin_addr == admin_addr, errorCodes::unauthorized());
 
-        let resource_signer = account::create_signer_with_capability(&registry.resource_cap);
+        let resource_signer = create_registry_resource_signer(&registry.resource_cap);
         let resource_addr = address_of(&resource_signer);
-
-        assert!(coin::balance<AptosCoin>(resource_addr) >= amount, errorCodes::insufficient_fund() );
+        has_sufficient_fund(resource_addr,amount);
 
         coin::transfer<AptosCoin>(&resource_signer, admin_addr, amount);
 
@@ -172,11 +182,10 @@ module de_fund_deposit::FundDeposit {
     // ======= View Functions ========== //
 
     #[view]
-    public fun get_resource_address():address {
+    public fun get_registry_resource_address():address {
         account::create_resource_address(&@admin,REGISTRY_SEED)
     }
     
-
     #[view]
     public fun get_balance(addr:address): u64{
         coin::balance<AptosCoin>(addr)
@@ -201,6 +210,55 @@ module de_fund_deposit::FundDeposit {
 
     public fun is_user_exists(addr: address){
         assert!(exists<UserRegistry>(addr),errorCodes::user_not_exists());
+    }
+
+    public fun is_admin_user (admin_addr:address, user_addr:address){
+        assert!(admin_addr == user_addr, errorCodes::unauthorized());
+    }
+
+    public fun create_registry_resource_signer(resource_cap: &SignerCapability):signer{
+        account::create_signer_with_capability(resource_cap)
+    }
+
+    public fun refund_removed_user_fund(resource_addr :address,resource_cap :&SignerCapability, user_addr :address) acquires  UserRegistry{
+        is_user_exists(user_addr);
+
+        let user = borrow_global_mut<UserRegistry>(user_addr);
+        let transferred_fund = user.transferred_fund;
+
+        has_sufficient_fund(resource_addr,transferred_fund);
+
+        let resource_balance = get_balance(resource_addr);
+        let resource_signer = create_registry_resource_signer(resource_cap);
+        coin::transfer<AptosCoin>(&resource_signer, user_addr, transferred_fund); // Refund the user's transferred fund
+
+        event::emit(RefundEvent {
+            user_addr,
+            amount:transferred_fund,
+            remaining_fund:resource_balance - transferred_fund,
+        });
+    }
+
+    public entry fun initialize_internal(deployer :&signer){
+        let (resource_signer, resource_signer_cap)  = account::create_resource_account(deployer,REGISTRY_SEED);
+        let resource_address = address_of(&resource_signer);
+
+        assert!(!exists<FundRegistry>(resource_address),errorCodes::fund_registry_already_exists());
+
+        let admin_addr = address_of(deployer);
+        move_to(&resource_signer, FundRegistry {
+            admin_addr,
+            resource_address,
+            resource_cap: resource_signer_cap,
+            white_listed_addresses: table::new(),
+        });
+
+        event::emit(ModuleInitEvent{
+            admin_addr,
+            resource_addr:resource_address
+        });
+
+        coin::register<AptosCoin>(&resource_signer);
     }
 
 }

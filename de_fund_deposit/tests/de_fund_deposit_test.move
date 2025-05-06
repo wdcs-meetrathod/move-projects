@@ -23,9 +23,9 @@ module de_fund_deposit::test {
     }
 
     #[test(aptos_framework = @0x1, admin = @0x40)]
-    fun test_init_registry(aptos_framework: &signer, admin: &signer) {
+    fun test_initialize_internal(aptos_framework: &signer, admin: &signer) {
         let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
-        FundDeposit::init_registry(admin);
+        FundDeposit::initialize_internal(admin);
         coin::destroy_burn_cap(burn_cap);
         coin::destroy_mint_cap(mint_cap);
     }
@@ -33,7 +33,7 @@ module de_fund_deposit::test {
     #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41)]
     fun test_user_register(aptos_framework: &signer, admin: &signer, user1:&signer) {
         let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
-        FundDeposit::init_registry(admin);
+        FundDeposit::initialize_internal(admin);
 
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
@@ -48,7 +48,7 @@ module de_fund_deposit::test {
     #[expected_failure(abort_code = 3)]
     fun test_user_re_register(aptos_framework: &signer, admin: &signer, user1:&signer) {
         let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
-        FundDeposit::init_registry(admin);
+        FundDeposit::initialize_internal(admin);
 
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
@@ -63,7 +63,7 @@ module de_fund_deposit::test {
     #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41, user2 = @0x42, user3 = @0x43)]
     fun test_whitelist_user(aptos_framework: &signer, admin: &signer, user1:&signer,user2:&signer,user3:&signer) {
         let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
-        FundDeposit::init_registry(admin);
+        FundDeposit::initialize_internal(admin);
 
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
@@ -77,10 +77,46 @@ module de_fund_deposit::test {
         let user3_addr = signer::address_of(user3);
 
         let users_vec = vector[user1_addr,user2_addr,user3_addr];
-        FundDeposit::handle_whitelisted_user(admin, users_vec, true);
+        FundDeposit::add_whitelist(admin, users_vec);
 
-        let users_vec2 = vector[user3_addr];
-        FundDeposit::handle_whitelisted_user(admin, users_vec2, false);
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
+    }
+
+    #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41)]
+    fun test_remove_whitelist_user(aptos_framework: &signer, admin: &signer, user1:&signer,) {
+        let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
+        FundDeposit::initialize_internal(admin);
+
+        let admin_addr = signer::address_of(admin);
+        account::create_account_for_test(admin_addr);
+
+        FundDeposit::register_user(user1);
+
+        let user1_addr = signer::address_of(user1);
+        coin::register<AptosCoin>(user1);
+
+        let users_vec = vector[user1_addr];
+        FundDeposit::add_whitelist(admin, users_vec);
+
+        let coins = coin::mint<AptosCoin>(10000, &mint_cap);
+        coin::deposit<AptosCoin>(user1_addr, coins);
+
+        print_string(to_string(b"[User1 balance before fund:]"));
+        let user1_balance = FundDeposit::get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+        FundDeposit::deposit_fund(user1, 1000);
+
+        print_string(to_string(b"[User1 balance after fund:]"));
+        let user1_balance = FundDeposit::get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+
+        FundDeposit::remove_whitelist(admin,users_vec);
+
+        print_string(to_string(b"[User1 balance after re-fund:]"));
+        let user1_balance = FundDeposit::get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+
 
         coin::destroy_burn_cap(burn_cap);
         coin::destroy_mint_cap(mint_cap);
@@ -89,7 +125,7 @@ module de_fund_deposit::test {
     #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41)]
     fun test_user_deposit_fund(aptos_framework: &signer, admin: &signer, user1:&signer) {
         let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
-        FundDeposit::init_registry(admin);
+        FundDeposit::initialize_internal(admin);
 
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
@@ -106,7 +142,7 @@ module de_fund_deposit::test {
 
 
         let users_vec = vector[user1_addr];
-        FundDeposit::handle_whitelisted_user(admin, users_vec, true);
+        FundDeposit::add_whitelist(admin, users_vec);
 
         print_string(to_string(b"[User1 balance before fund:]"));
         let user1_balance = FundDeposit::get_balance(user1_addr);
@@ -126,7 +162,7 @@ module de_fund_deposit::test {
     #[expected_failure(abort_code = 5)]
     fun test_deposit_fund_with_no_whitelisted_user(aptos_framework: &signer, admin: &signer, user1:&signer,user2:&signer) {
         let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
-        FundDeposit::init_registry(admin);
+        FundDeposit::initialize_internal(admin);
 
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
@@ -149,7 +185,7 @@ module de_fund_deposit::test {
 
 
         let users_vec = vector[user1_addr];
-        FundDeposit::handle_whitelisted_user(admin, users_vec, true);
+        FundDeposit::add_whitelist(admin, users_vec);
 
         print_string(to_string(b"[User1 balance before fund:]"));
         let user1_balance = FundDeposit::get_balance(user1_addr);
@@ -176,7 +212,7 @@ module de_fund_deposit::test {
     #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41)]
     fun test_admin_withdraw_fund(aptos_framework: &signer, admin: &signer, user1:&signer) {
         let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
-        FundDeposit::init_registry(admin);
+        FundDeposit::initialize_internal(admin);
 
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
@@ -194,7 +230,7 @@ module de_fund_deposit::test {
 
 
         let users_vec = vector[user1_addr];
-        FundDeposit::handle_whitelisted_user(admin, users_vec, true);
+        FundDeposit::add_whitelist(admin, users_vec);
 
         print_string(to_string(b"[User1 balance before fund:]"));
         let user1_balance = FundDeposit::get_balance(user1_addr);
@@ -224,7 +260,7 @@ module de_fund_deposit::test {
     #[expected_failure(abort_code = 6)]
     fun test_user_withdraw_fund(aptos_framework: &signer, admin: &signer, user1:&signer) {
         let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
-        FundDeposit::init_registry(admin);
+        FundDeposit::initialize_internal(admin);
 
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
@@ -242,7 +278,7 @@ module de_fund_deposit::test {
 
 
         let users_vec = vector[user1_addr];
-        FundDeposit::handle_whitelisted_user(admin, users_vec, true);
+        FundDeposit::add_whitelist(admin, users_vec);
 
         print_string(to_string(b"[User1 balance before fund:]"));
         let user1_balance = FundDeposit::get_balance(user1_addr);
