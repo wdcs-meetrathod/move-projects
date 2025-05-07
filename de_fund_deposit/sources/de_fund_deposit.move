@@ -5,24 +5,21 @@ module de_fund_deposit::FundDeposit {
     use std::signer::address_of;
     use std::event;
     use std::vector;
-
-    use aptos_std::table;
+    use std::debug;
     
     use aptos_framework::account::{Self, SignerCapability};
     use aptos_framework::coin;
-    use aptos_framework::aptos_coin::AptosCoin;
+    use aptos_framework::aptos_coin::{AptosCoin};
 
     const REGISTRY_SEED: vector<u8> = b"DE_FUND_DEPOSIT_REGISTRY";
+
+    const E_UNAUTHORIZED:u64 = 5;
+    const E_NOT_ADMIN:u64 = 6;
 
     #[event]
     struct ModuleInitEvent has drop, store {
         admin_addr: address,
         resource_addr: address,
-    }
-
-    #[event]
-    struct UserInitEvent has drop, store {
-        user_addr: address,
     }
 
     #[event]
@@ -46,16 +43,11 @@ module de_fund_deposit::FundDeposit {
         remaining_fund:u64
     }
 
-    #[event]
-    struct UserWhiteListedEvent has drop, store {
-        user_addr:address
-    }
-
     struct FundRegistry has key{
         admin_addr: address,
         resource_address:address,
         resource_cap: SignerCapability,
-        white_listed_addresses: table::Table<address, bool>,
+        white_listed_addresses: vector<address>,
     }
 
     struct UserRegistry has key {
@@ -64,50 +56,39 @@ module de_fund_deposit::FundDeposit {
     }
 
     fun init_module(deployer:&signer){
-        initialize_internal(deployer);
+        let (resource_signer, resource_signer_cap)  = account::create_resource_account(deployer,REGISTRY_SEED);
+        let resource_address = address_of(&resource_signer);
+
+        assert!(!exists<FundRegistry>(resource_address),errorCodes::fund_registry_already_exists());
+
+        let admin_addr = address_of(deployer);
+        move_to(&resource_signer, FundRegistry {
+            admin_addr,
+            resource_address,
+            resource_cap: resource_signer_cap,
+            white_listed_addresses: vector::empty(),
+        });
+
+        event::emit(ModuleInitEvent{
+            admin_addr,
+            resource_addr:resource_address
+        });
+
+        coin::register<AptosCoin>(&resource_signer);
     }
-
-    public entry fun register_user(user: &signer) acquires FundRegistry{
-        let user_addr = address_of(user);
-        assert!(!exists<UserRegistry>(user_addr),errorCodes::user_already_exists());
-
-        let registry_addr = get_registry_resource_address();
-        is_registry_exists(registry_addr);
-        
-        let registry = borrow_global_mut<FundRegistry>(registry_addr);
-
-        table::add(&mut registry.white_listed_addresses, user_addr, false); // By default user_addr is not whitelisted
-
-        move_to(user,UserRegistry {
-            user_addr,
-            transferred_fund: 0,
-        });
-
-        event::emit(UserInitEvent {
-            user_addr
-        });
-    }   
 
     public entry fun add_whitelist(admin:&signer, users:vector<address>) acquires FundRegistry{
         let admin_addr = address_of(admin);
+        let resource_addr = get_registry_resource_address();
 
-        let resource_addr = get_registry_resource_address();        
         is_registry_exists(resource_addr);
-
         let registry = borrow_global_mut<FundRegistry>(resource_addr);
+
         is_admin_user(registry.admin_addr, admin_addr);// Only admin can whitelist the users
-
-
-        if (vector::length(&users) > 0) {
-            vector::for_each<address>(users, |user_addr: address| {
-            let user_ref = table::borrow_mut(&mut registry.white_listed_addresses, user_addr);
-            *user_ref = true; // Make the user_addr as whitelisted
-
-            event::emit(UserWhiteListedEvent {
-                user_addr
-                });
-            });
-        };
+        
+        vector::for_each<address>(users, |user_addr: address| {
+            vector::push_back(&mut registry.white_listed_addresses, user_addr);
+        });
     }
 
     public entry fun remove_whitelist(admin:&signer, users:vector<address>) acquires FundRegistry, UserRegistry{
@@ -117,34 +98,41 @@ module de_fund_deposit::FundDeposit {
         is_registry_exists(resource_addr);
 
         let registry = borrow_global_mut<FundRegistry>(resource_addr);
-
         is_admin_user(registry.admin_addr, admin_addr);// Only admin can remove the white listed user
 
-        if (vector::length(&users) > 0) {
-            vector::for_each<address>(users, |user_addr: address| {
+        vector::for_each<address>(users, |user_addr: address| {
             refund_removed_user_fund(resource_addr, &registry.resource_cap, user_addr);
-            table::remove(&mut registry.white_listed_addresses, user_addr);
-            });
-        };
+
+            let (_, i) = vector::index_of<address>(&registry.white_listed_addresses, &user_addr);
+            vector::remove<address>(&mut registry.white_listed_addresses, i);
+        });
+        
     }
 
 
     public entry fun deposit_fund(user:&signer, amount: u64) acquires UserRegistry, FundRegistry{
         let user_addr = address_of(user);
-        is_user_exists(user_addr);
 
         let registry_addr = get_registry_resource_address();
         is_registry_exists(registry_addr);
         
         let registry = borrow_global<FundRegistry>(registry_addr);
         
-        is_user_whitelisted(&registry.white_listed_addresses, user_addr);
+        is_user_whitelisted(&registry.white_listed_addresses, &user_addr);
         has_sufficient_fund(user_addr, amount);
 
         coin::transfer<AptosCoin>(user, registry.resource_address, amount);
 
-        let user_registry = borrow_global_mut<UserRegistry>(user_addr);
-        user_registry.transferred_fund = user_registry.transferred_fund + amount;
+        if(exists<UserRegistry>(user_addr)){
+            let user_registry = borrow_global_mut<UserRegistry>(user_addr);
+            user_registry.transferred_fund = user_registry.transferred_fund + amount;
+        }else{
+            move_to(user, UserRegistry{
+                user_addr,
+                transferred_fund:0
+            });
+        };
+        
 
         
         let total_fund = get_balance(registry.resource_address);
@@ -193,10 +181,8 @@ module de_fund_deposit::FundDeposit {
 
     // ======= Utils Functions ========== //
 
-    public fun is_user_whitelisted(registry_addresses: &table::Table<address,bool>, user_addr: address ) {
-        assert!(table::contains(registry_addresses, user_addr), errorCodes::user_not_whitelisted());
-
-        let is_whitelisted = *table::borrow(registry_addresses, user_addr);
+    public fun is_user_whitelisted(registry_addresses: &vector<address>, user_addr: &address) {
+        let is_whitelisted = vector::contains<address>(registry_addresses, user_addr);
         assert!(is_whitelisted, errorCodes::user_not_whitelisted());
     }
 
@@ -239,7 +225,24 @@ module de_fund_deposit::FundDeposit {
         });
     }
 
-    public entry fun initialize_internal(deployer :&signer){
+    // Test
+    #[test_only]
+    use std::string::{Self, String};
+    use aptos_framework::aptos_coin;
+    
+
+    #[test_only]
+    // Helper function to print strings in a readable format
+    fun print_string(message: String) {
+        debug::print(&message);
+    }
+    #[test_only]
+    // Helper function to convert byte string to String
+    fun to_string(bytes: vector<u8>): String {
+        string::utf8(bytes)
+    }
+    #[test_only]
+    fun initialize_internal(deployer :&signer){
         let (resource_signer, resource_signer_cap)  = account::create_resource_account(deployer,REGISTRY_SEED);
         let resource_address = address_of(&resource_signer);
 
@@ -250,15 +253,237 @@ module de_fund_deposit::FundDeposit {
             admin_addr,
             resource_address,
             resource_cap: resource_signer_cap,
-            white_listed_addresses: table::new(),
-        });
-
-        event::emit(ModuleInitEvent{
-            admin_addr,
-            resource_addr:resource_address
+            white_listed_addresses: vector::empty(),
         });
 
         coin::register<AptosCoin>(&resource_signer);
     }
 
+    #[test(aptos_framework = @0x1, admin = @0x40)]
+    fun test_initialize_internal(aptos_framework: &signer, admin: &signer) {
+        let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
+        initialize_internal(admin);
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
+    }
+
+    #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41, user2 = @0x42, user3 = @0x43)]
+    fun test_whitelist_user(aptos_framework: &signer, admin: &signer, user1:&signer,user2:&signer,user3:&signer) acquires FundRegistry {
+        let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
+        initialize_internal(admin);
+
+        let admin_addr = address_of(admin);
+        account::create_account_for_test(admin_addr);
+
+        let user1_addr = address_of(user1);
+        let user2_addr = address_of(user2);
+        let user3_addr = address_of(user3);
+
+        let users_vec = vector[user1_addr,user2_addr,user3_addr];
+        add_whitelist(admin, users_vec);
+
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
+    }
+
+    #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41)]
+    fun test_remove_whitelist_user(aptos_framework: &signer, admin: &signer, user1:&signer) acquires FundRegistry, UserRegistry {
+        let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
+        initialize_internal(admin);
+
+        let admin_addr = address_of(admin);
+        account::create_account_for_test(admin_addr);
+
+        let user1_addr = address_of(user1);
+        coin::register<AptosCoin>(user1);
+
+        let users_vec = vector[user1_addr];
+        add_whitelist(admin, users_vec);
+
+        let coins = coin::mint<AptosCoin>(10000, &mint_cap);
+        coin::deposit<AptosCoin>(user1_addr, coins);
+
+        print_string(to_string(b"[User1 balance before fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+        deposit_fund(user1, 1000);
+
+        print_string(to_string(b"[User1 balance after fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+
+        remove_whitelist(admin,users_vec);
+
+        print_string(to_string(b"[User1 balance after re-fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+
+
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
+    }
+
+    #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41)]
+    fun test_user_deposit_fund(aptos_framework: &signer, admin: &signer, user1:&signer) acquires FundRegistry, UserRegistry {
+        let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
+        initialize_internal(admin);
+
+        let admin_addr = address_of(admin);
+        account::create_account_for_test(admin_addr);
+
+        let user1_addr = address_of(user1);
+        coin::register<AptosCoin>(user1);
+
+        let coins = coin::mint<AptosCoin>(10000, &mint_cap);
+        coin::deposit<AptosCoin>(user1_addr, coins);
+
+        let users_vec = vector[user1_addr];
+        add_whitelist(admin, users_vec);
+
+        print_string(to_string(b"[User1 balance before fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+        deposit_fund(user1, 1000);
+
+        print_string(to_string(b"[User1 balance after fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+
+
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
+    }
+
+    #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41, user2 = @0x42)]
+    #[expected_failure(abort_code = E_UNAUTHORIZED)]
+    fun test_deposit_fund_with_no_whitelisted_user(aptos_framework: &signer, admin: &signer, user1:&signer,user2:&signer) acquires FundRegistry, UserRegistry {
+        let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
+        initialize_internal(admin);
+
+        let admin_addr = address_of(admin);
+        account::create_account_for_test(admin_addr);
+
+        let user1_addr = address_of(user1);
+        let user2_addr = address_of(user2);
+
+        coin::register<AptosCoin>(user1);
+        coin::register<AptosCoin>(user2);
+
+        let coins = coin::mint<AptosCoin>(10000, &mint_cap);
+        coin::deposit<AptosCoin>(user1_addr, coins);
+
+        let coins = coin::mint<AptosCoin>(10000, &mint_cap);
+        coin::deposit<AptosCoin>(user2_addr, coins);
+
+
+        let users_vec = vector[user1_addr];
+        add_whitelist(admin, users_vec);
+
+        print_string(to_string(b"[User1 balance before fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+        deposit_fund(user1, 1000);
+
+        print_string(to_string(b"[User1 balance after fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+
+        print_string(to_string(b"[User2 balance before fund:]"));
+        let user2_balance = get_balance(user2_addr);
+        debug::print<u64>(&user2_balance);
+        deposit_fund(user2, 1000);
+
+        print_string(to_string(b"[User2 balance after fund:]"));
+        let user2_balance = get_balance(user2_addr);
+        debug::print<u64>(&user2_balance);
+
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
+    }
+
+    #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41)]
+    fun test_admin_withdraw_fund(aptos_framework: &signer, admin: &signer, user1:&signer) acquires FundRegistry, UserRegistry {
+        let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
+        initialize_internal(admin);
+
+        let admin_addr = address_of(admin);
+        account::create_account_for_test(admin_addr);
+
+        let user1_addr = address_of(user1);
+
+        coin::register<AptosCoin>(admin);
+        coin::register<AptosCoin>(user1);
+
+        let coins = coin::mint<AptosCoin>(10000, &mint_cap);
+        coin::deposit<AptosCoin>(user1_addr, coins);
+
+        let users_vec = vector[user1_addr];
+        add_whitelist(admin, users_vec);
+
+        print_string(to_string(b"[User1 balance before fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+        deposit_fund(user1, 1000);
+
+        print_string(to_string(b"[User1 balance after fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+
+        let admin_balance = coin::balance<AptosCoin>(admin_addr);
+        print_string(to_string(b"[Admin AptosCoin Balance before:]"));
+        debug::print<u64>(&admin_balance);
+
+        withdraw_fund(admin_addr, 1000);
+
+        let admin_balance = coin::balance<AptosCoin>(admin_addr);
+        print_string(to_string(b"[Admin AptosCoin Balance after:]"));
+        debug::print<u64>(&admin_balance);
+
+
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
+    }
+
+    #[test(aptos_framework = @0x1, admin = @0x40, user1 = @0x41)]
+    #[expected_failure(abort_code = E_NOT_ADMIN)]
+    fun test_user_withdraw_fund(aptos_framework: &signer, admin: &signer, user1:&signer) acquires FundRegistry, UserRegistry {
+        let (burn_cap, mint_cap) = aptos_coin::initialize_for_test(aptos_framework);
+        initialize_internal(admin);
+
+        let admin_addr = address_of(admin);
+        account::create_account_for_test(admin_addr);
+
+        let user1_addr = address_of(user1);
+
+        coin::register<AptosCoin>(admin);
+        coin::register<AptosCoin>(user1);
+
+        let coins = coin::mint<AptosCoin>(10000, &mint_cap);
+        coin::deposit<AptosCoin>(user1_addr, coins);
+
+        let users_vec = vector[user1_addr];
+        add_whitelist(admin, users_vec);
+
+        print_string(to_string(b"[User1 balance before fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+        deposit_fund(user1, 1000);
+
+        print_string(to_string(b"[User1 balance after fund:]"));
+        let user1_balance = get_balance(user1_addr);
+        debug::print<u64>(&user1_balance);
+
+        let admin_balance = coin::balance<AptosCoin>(admin_addr);
+        print_string(to_string(b"[Admin AptosCoin Balance before:]"));
+        debug::print<u64>(&admin_balance);
+
+        withdraw_fund(user1_addr, 1000);
+
+        let admin_balance = coin::balance<AptosCoin>(admin_addr);
+        print_string(to_string(b"[Admin AptosCoin Balance after:]"));
+        debug::print<u64>(&admin_balance);
+
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
+    }
 }
