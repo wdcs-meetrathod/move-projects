@@ -1,0 +1,15 @@
+[package]
+name = "de_multisign_reward_system"
+version = "1.0.0"
+authors = []
+
+[addresses]
+multisig_reward = "0x6757e59b9cc69555c9f1faa871822570d0c8ffcc3451a2d97a6e84b0b260d4f6"
+super_admin = "0x6757e59b9cc69555c9f1faa871822570d0c8ffcc3451a2d97a6e84b0b260d4f6"
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "devnet"
+subdir = "aptos-move/framework/aptos-framework"
