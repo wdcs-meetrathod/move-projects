@@ -1,0 +1,31 @@
+aptos multisig create \
+  --additional-owners 0x123abc 0x456def \
+  --num-signatures-required 2 \
+  --private-key-file owner.key \
+  --assume-yes
+
+aptos multisig create-transaction \
+  --multisig-address MULTISIG_ADDRESS \
+  --function-id multisig::wallet::init_wallet \
+  --args address:0x123abc address:0x456def address:0x789ghi u64:2 \
+  --private-key-file owner.key
+
+aptos multisig approve \
+  --multisig-address MULTISIG_ADDRESS \
+  --transaction-id 0 \
+  --private-key-file other_owner.key \
+  --assume-yes
+
+aptos multisig execute \
+  --multisig-address MULTISIG_ADDRESS \
+  --transaction-id 0 \
+  --private-key-file owner.key \
+  --assume-yes
+
+aptos multisig create-transaction \
+  --multisig-address MULTISIG_ADDRESS \
+  --function-id multisig::wallet::propose_fund \
+  --args address:WALLET_ADDRESS address:RECIPIENT_ADDRESS u64:1000000000 \
+  --private-key-file owner.key
+  
+    

@@ -1,0 +1,18 @@
+[package]
+name = "multisig_wallet"
+version = "1.0.0"
+authors = []
+
+[addresses]
+multisig = "0xcee04a4f56187ffd16394ecc95999fb78cea41615c76bf3cc8b87e382e573ca3"
+ace_addr="0xacef1b9b7d4ab208b99fed60746d18dcd74865edb7eb3c3f1428233988e4ba46"
+bee_addr="0xbeec980219d246581cef5166dc6ba5fb1e090c7a7786a5176d111a9029b16ddc"
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-framework.git"
+rev = "mainnet"
+subdir = "aptos-framework"
+
+[dev-dependencies]
