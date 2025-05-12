@@ -72,7 +72,7 @@ module multisig_reward::MultiSig {
     */
     fun init_module(super_admin: &signer){
         let super_admin_addr = signer::address_of(super_admin);
-        is_super_admin(super_admin_addr);
+        // is_super_admin(super_admin_addr);
 
         managed_coin::initialize<MvCoin>(
             super_admin,
@@ -113,9 +113,6 @@ module multisig_reward::MultiSig {
         To mint the MvCoin
     */
     public entry fun mint_coin(super_admin: &signer, amount: u64) {
-        let super_admin_addr = signer::address_of(super_admin);
-        is_super_admin(super_admin_addr);
-
         let obj_address = get_object_account_address();
         is_admin_registry_exists(obj_address);
 
@@ -310,7 +307,7 @@ module multisig_reward::MultiSig {
     */
     public entry fun withdraw_expired_token(super_admin: &signer) acquires AdminRegistry, RewardRegistry, ExpiredRewardRegistry{
         let super_admin_addr = signer::address_of(super_admin);
-        is_super_admin(super_admin_addr);
+        // is_super_admin(super_admin_addr);
 
         let obj_address = get_object_account_address();
         is_admin_registry_exists(obj_address);
@@ -346,7 +343,7 @@ module multisig_reward::MultiSig {
             To get object address
         */
         public fun get_object_account_address(): address {
-            object::create_object_address(&@super_admin, ADMIN_OBJ_SEED)
+            object::create_object_address(&@multisig_reward, ADMIN_OBJ_SEED)
         }
 
         #[view]
@@ -455,7 +452,7 @@ module multisig_reward::MultiSig {
             timestamp::update_global_time_for_test_secs(current_time);
 
             let super_admin_addr = signer::address_of(super_admin);
-            is_super_admin(super_admin_addr);
+            // is_super_admin(super_admin_addr);
 
             managed_coin::initialize<MvCoin>(
                 super_admin,
@@ -485,22 +482,22 @@ module multisig_reward::MultiSig {
             register_user(&obj_signer);
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_init_registry(framework: signer, super_admin:signer) {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward)]
+        fun test_init_registry(framework: signer, app_module:signer) {
+            init_registry(&framework, &app_module);
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_mint_coin(framework: signer, super_admin: signer) {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_mint_coin(framework: signer, app_module: signer, super_admin: signer) {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_add_owner(framework: signer, super_admin: signer) acquires AdminRegistry {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_add_owner(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -509,10 +506,10 @@ module multisig_reward::MultiSig {
             add_owner(&super_admin, signer::address_of(&user1));
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
         #[expected_failure (abort_code = E_OWNER_ALREADY_EXISTS) ]
-        fun test_add_duplicate_owner(framework: signer, super_admin: signer) acquires AdminRegistry {
-            init_registry(&framework, &super_admin);
+        fun test_add_duplicate_owner(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -523,9 +520,9 @@ module multisig_reward::MultiSig {
             add_owner(&super_admin, signer::address_of(&user1));
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_remove_owner(framework: signer, super_admin: signer) acquires AdminRegistry {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_remove_owner(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -541,10 +538,10 @@ module multisig_reward::MultiSig {
 
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
         #[expected_failure (abort_code = E_OWNER_NOT_EXISTS) ]
-        fun test_remove_non_exists_owner(framework: signer, super_admin: signer) acquires AdminRegistry {
-            init_registry(&framework, &super_admin);
+        fun test_remove_non_exists_owner(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -560,10 +557,10 @@ module multisig_reward::MultiSig {
             remove_owner(&super_admin, signer::address_of(&user4));
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
         #[expected_failure (abort_code = E_VIOLATE_MIN_THRESHOLD) ]
-        fun test_violate_threshold(framework: signer, super_admin: signer) acquires AdminRegistry {
-            init_registry(&framework, &super_admin);
+        fun test_violate_threshold(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -580,9 +577,9 @@ module multisig_reward::MultiSig {
             remove_owner(&super_admin, signer::address_of(&user3));
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_propose_reward(framework: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_propose_reward(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -606,10 +603,10 @@ module multisig_reward::MultiSig {
             );
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
         #[expected_failure (abort_code = E_VIOLATE_MIN_THRESHOLD) ]
-        fun test_propose_reward_violate_threshold(framework: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
-            init_registry(&framework, &super_admin);
+        fun test_propose_reward_violate_threshold(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -631,9 +628,9 @@ module multisig_reward::MultiSig {
             );
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_approve_reward(framework: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_approve_reward(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -662,9 +659,9 @@ module multisig_reward::MultiSig {
             );
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_claim_reward(framework: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_claim_reward(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -698,10 +695,10 @@ module multisig_reward::MultiSig {
             );
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
         #[expected_failure (abort_code = E_NOT_VALID_REWARD) ]
-        fun test_claim_reward_by_violated_threshold(framework: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
-            init_registry(&framework, &super_admin);
+        fun test_claim_reward_by_violated_threshold(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -730,9 +727,9 @@ module multisig_reward::MultiSig {
             );
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_propose_withdrawn(framework: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry, ExpiredRewardRegistry {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_propose_withdrawn(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry, ExpiredRewardRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -763,9 +760,9 @@ module multisig_reward::MultiSig {
             propose_withdrawn(&owner2);
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_approve_withdrawn(framework: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry, ExpiredRewardRegistry {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_approve_withdrawn(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry, ExpiredRewardRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);
@@ -797,9 +794,9 @@ module multisig_reward::MultiSig {
             approve_withdrawn(&owner2);
         }
 
-        #[test(framework = @0x1, super_admin= @super_admin)]
-        fun test_withdrawn_token(framework: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry, ExpiredRewardRegistry {
-            init_registry(&framework, &super_admin);
+        #[test(framework = @0x1, app_module= @multisig_reward, super_admin= @super_admin)]
+        fun test_withdrawn_token(framework: signer, app_module: signer, super_admin: signer) acquires AdminRegistry, RewardRegistry, ExpiredRewardRegistry {
+            init_registry(&framework, &app_module);
 
             mint_coin(&super_admin, DEFAULT_MINT_AMOUNT);
             assert!(get_balance(get_object_account_address()) == DEFAULT_MINT_AMOUNT , E_INVALID_MINT_AMOUNT);

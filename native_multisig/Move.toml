@@ -1,0 +1,16 @@
+[package]
+name = "native_multisig"
+version = "1.0.0"
+authors = []
+
+[addresses]
+multisig= "0xc67ba98368c5403a1cf81f2588cbc9c45e418d9105e2c178df266a2587335407"
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-framework.git"
+rev = "mainnet"
+subdir = "aptos-framework"
+
+[dev-dependencies]
